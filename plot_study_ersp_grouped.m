@@ -1,0 +1,140 @@
+function [ersp] = plot_study_ersp_grouped(STUDY,cluster_id,ALLEEG,filepath_singlesubject,method,indexes)
+
+if strcmp(method,'grouping')
+    current_cluster = STUDY.cluster(cluster_id);
+    comps = current_cluster.comps;
+    sets = current_cluster.sets;
+    baseline_ica_all_subjects = [];
+    ica_all_subjects = [];
+    RT_LAT_all_subjects = [];
+    
+    if ~isempty(indexes) comps_to_use = indexes;
+    else comps_to_use = 1:length(ALLEEG); end
+
+    for i=comps_to_use
+        comp = comps(i);
+        current_set = sets(i);
+        current_eeg = ALLEEG(current_set);
+        subject_info = split(current_eeg.filename,'_');
+        subject_id = subject_info{1};
+        subject_cond = subject_info{2};
+        baseline_eeg = pop_loadset('filename',[subject_id '_' subject_cond '_preprocessed_and_ICA.set'],...
+                'filepath',fullfile(filepath_singlesubject,subject_id));
+        walk_idx = find(strcmp({baseline_eeg.event.type},'Walk Onset'));
+        walk_latency = baseline_eeg.event(walk_idx).latency;
+        baseline_ica = baseline_eeg.icaact(comp,1:walk_latency);
+        RESPONSEtime = [0 1500];
+        Response_timelhs_nxt = [100,1500];
+        LHS_events = eeg_getepochevent(current_eeg,{'LHS'},RESPONSEtime, 'latency');
+        RTO_events = eeg_getepochevent(current_eeg ,{'RTO'},RESPONSEtime, 'latency');
+        RHS_events = eeg_getepochevent(current_eeg,{'RHS'},RESPONSEtime, 'latency');
+        LTO_events = eeg_getepochevent(current_eeg,{'LTO'},RESPONSEtime, 'latency');
+        LHS_nxt_events = eeg_getepochevent(current_eeg , {'LHS_nxt'}, Response_timelhs_nxt, 'latency');
+        RT_LAT = [LHS_events' ,RTO_events',RHS_events' LTO_events' LHS_nxt_events'];
+        RT_LAT_all_subjects = [RT_LAT_all_subjects;RT_LAT];
+        baseline_ica_all_subjects = [baseline_ica_all_subjects,baseline_ica];
+        ica_all_subjects = cat(3,ica_all_subjects,current_eeg.icaact(comp,:,:));
+    
+    end
+    new_LAT = [0 100 500 600, 1000];%% generate matrix with rows equal trials and columns equal 0 and RT latencies 
+    [ersp_baseline, itc, powbase_baseline, times, freqs_baseline, eboot, pboot, tfr_baseline]=newtimef( baseline_ica_all_subjects,width(baseline_ica_all_subjects),[0 30000*length(ALLEEG)], ...
+            current_eeg.srate, 0,'cycles', [3 0.5], 'freqs',[4 150],'plotitc','off','plotmean','off','plotersp','off','baseline',NaN,'nfreqs',100,'plotphasesign','off','scale','abs');
+    figure;
+    [ersp, itc, powbase, times, freqs, eboot, pboot, tfdata] = newtimef(ica_all_subjects, current_eeg.pnts, ...
+            [current_eeg.xmin current_eeg.xmax]*1000,  current_eeg.srate,[3 0.5],...
+            'freqs',[4 150],'timesout',0:5:999,...
+            'timewarp', RT_LAT_all_subjects,'timewarpms',new_LAT,...
+             'plotitc', 'off','powbase',powbase_baseline,'nfreqs',100,'scale','abs');
+elseif strcmp(method,'mean') %not finished
+    current_cluster = STUDY.cluster(cluster_id);
+    comps = current_cluster.comps;
+    sets = current_cluster.sets;
+    ersps = [];
+    for i=1:3
+        comp = comps(i);
+        current_set = sets(i);
+        current_eeg = ALLEEG(current_set);
+        subject_info = split(current_eeg.filename,'_');
+        subject_id = subject_info{1};
+        subject_cond = subject_info{2};
+        baseline_eeg = pop_loadset('filename',[subject_id '_' subject_cond '_preprocessed_and_ICA.set'],...
+                'filepath',fullfile(filepath_singlesubject,subject_id));
+        walk_idx = find(strcmp({baseline_eeg.event.type},'Walk Onset'));
+        walk_latency = baseline_eeg.event(walk_idx).latency;
+        baseline_ica = baseline_eeg.icaact(comp,1:walk_latency);
+        RESPONSEtime = [0 1500];
+        Response_timelhs_nxt = [100,1500];
+        LHS_events = eeg_getepochevent(current_eeg,{'LHS'},RESPONSEtime, 'latency');
+        RTO_events = eeg_getepochevent(current_eeg ,{'RTO'},RESPONSEtime, 'latency');
+        RHS_events = eeg_getepochevent(current_eeg,{'RHS'},RESPONSEtime, 'latency');
+        LTO_events = eeg_getepochevent(current_eeg,{'LTO'},RESPONSEtime, 'latency');
+        LHS_nxt_events = eeg_getepochevent(current_eeg , {'LHS_nxt'}, Response_timelhs_nxt, 'latency');
+        RT_LAT = [LHS_events' ,RTO_events',RHS_events' LTO_events' LHS_nxt_events'];
+        new_LAT = [0 100 500 600, 1000];%% generate matrix with rows equal trials and columns equal 0 and RT latencies 
+        [ersp_baseline, itc, powbase_baseline, times, freqs_baseline, eboot, pboot, tfr_baseline]=newtimef( baseline_ica,width(baseline_ica),[0 30000], ...
+            current_eeg.srate, 0,'cycles', [5 0.5], 'freqs',[4 150],'plotitc','off','plotmean','off','plotersp','off','baseline',NaN,'nfreqs',100,'plotphasesign','off','scale','abs');
+        
+        [ersp, itc, powbase, times, freqs, eboot, pboot, tfdata,PA,g] = newtimef(current_eeg.icaact(comp,:), current_eeg.pnts, ...
+            [current_eeg.xmin current_eeg.xmax]*1000,  current_eeg.srate,[1 0.4],...
+            'freqs',[4 150],'timesout',0:5:999,...
+            'timewarp', RT_LAT,'timewarpms',new_LAT,...
+             'plotitc','off','plotmean','off','plotersp','off','plotphasesign','off','powbase',powbase_baseline,'nfreqs',100,'scale','abs');
+        ersps = cat(3,ersps,ersp);
+    end
+    ersps = mean(ersps,3);
+    Pboot = zeros(0);
+    Rboot = zeros(0);
+    mbase = zeros(0);
+    maskersp = zeros(0);
+    maskitc = zeros(0);
+    ERP = zeros(0);
+    figure;
+    g.plotersp = 'on';
+    imagesclogy(times,freqs,ersps(:,:),g.erspmax);
+    current_set(gca,'ydir',g.hzdir);
+    plottimef(ersps, ersps, Pboot, Rboot, ERP, freqs, times, mbase, maskersp, maskitc, g);
+elseif strcmp(method,'separate')
+    current_cluster = STUDY.cluster(cluster_id);
+    comps = current_cluster.comps;
+    sets = current_cluster.sets;
+    baseline_ica_all_subjects = [];
+    ica_all_subjects = [];
+    RT_LAT_all_subjects = [];
+    
+    for i=1:length(ALLEEG)
+        comp = comps(i);
+        current_set = sets(i);
+        current_eeg = ALLEEG(current_set);
+        subject_info = split(current_eeg.filename,'_');
+        subject_id = subject_info{1};
+        subject_cond = subject_info{2};
+        baseline_eeg = pop_loadset('filename',[subject_id '_' subject_cond '_preprocessed_and_ICA.set'],...
+                'filepath',fullfile(filepath_singlesubject,subject_id));
+        walk_idx = find(strcmp({baseline_eeg.event.type},'Walk Onset'));
+        walk_latency = baseline_eeg.event(walk_idx).latency;
+        baseline_ica = baseline_eeg.icaact(comp,1:walk_latency);
+        RESPONSEtime = [0 1500];
+        Response_timelhs_nxt = [100,1500];
+        LHS_events = eeg_getepochevent(current_eeg,{'LHS'},RESPONSEtime, 'latency');
+        RTO_events = eeg_getepochevent(current_eeg ,{'RTO'},RESPONSEtime, 'latency');
+        RHS_events = eeg_getepochevent(current_eeg,{'RHS'},RESPONSEtime, 'latency');
+        LTO_events = eeg_getepochevent(current_eeg,{'LTO'},RESPONSEtime, 'latency');
+        LHS_nxt_events = eeg_getepochevent(current_eeg , {'LHS_nxt'}, Response_timelhs_nxt, 'latency');
+        RT_LAT = [LHS_events' ,RTO_events',RHS_events' LTO_events' LHS_nxt_events'];
+        RT_LAT_all_subjects = [RT_LAT_all_subjects;RT_LAT];
+        baseline_ica_all_subjects = [baseline_ica_all_subjects,baseline_ica];
+        ica_all_subjects = cat(3,ica_all_subjects,current_eeg.icaact(comp,:,:));
+    
+    end
+    new_LAT = [0 100 500 600, 1000];%% generate matrix with rows equal trials and columns equal 0 and RT latencies 
+    [ersp_baseline, itc, powbase_baseline, times, freqs_baseline, eboot, pboot, tfr_baseline]=newtimef( baseline_ica_all_subjects,width(baseline_ica_all_subjects),[0 30000*length(ALLEEG)], ...
+            current_eeg.srate, 0,'cycles', [5 0.5], 'freqs',[4 150],'plotitc','off','plotmean','off','plotersp','off','baseline',NaN,'nfreqs',100,'plotphasesign','off','scale','abs');
+    figure;
+    [ersp, itc, powbase, times, freqs, eboot, pboot, tfdata] = newtimef(ica_all_subjects, current_eeg.pnts, ...
+            [current_eeg.xmin current_eeg.xmax]*1000,  current_eeg.srate,[1 0.4],...
+            'freqs',[4 150],'timesout',0:5:999,...
+            'timewarp', RT_LAT_all_subjects,'timewarpms',new_LAT,...
+             'plotitc', 'off','powbase',powbase_baseline,'nfreqs',100,'scale','abs');
+
+end
+end
